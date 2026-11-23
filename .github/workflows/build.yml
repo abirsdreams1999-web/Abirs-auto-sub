@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,6 +21,8 @@ jobs:
           mkdir -p app/src/main/java/com/example/livesub
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/mipmap-anydpi-v26
+
+          echo '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' | base64 -d > app/ls.jks
 
           cat > settings.gradle.kts <<'EOF'
           pluginManagement {
@@ -59,12 +62,21 @@ jobs:
           android {
               namespace = "com.example.livesub"
               compileSdk = 34
+              signingConfigs {
+                  getByName("debug") {
+                      storeFile = file("ls.jks")
+                      storeType = "pkcs12"
+                      storePassword = "livesub123"
+                      keyAlias = "livesub"
+                      keyPassword = "livesub123"
+                  }
+              }
               defaultConfig {
                   applicationId = "com.example.livesub"
                   minSdk = 29
                   targetSdk = 34
-                  versionCode = 2
-                  versionName = "2.0"
+                  versionCode = 3
+                  versionName = "3.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -147,6 +159,11 @@ jobs:
           cat > app/src/main/java/com/example/livesub/Util.kt <<'EOF'
           package com.example.livesub
 
+          import android.content.Context
+          import android.media.MediaCodec
+          import android.media.MediaExtractor
+          import android.media.MediaFormat
+          import android.net.Uri
           import com.google.mlkit.nl.languageid.LanguageIdentification
           import com.google.mlkit.nl.translate.TranslateLanguage
           import com.google.mlkit.nl.translate.Translation
@@ -157,13 +174,42 @@ jobs:
           import okhttp3.OkHttpClient
           import okhttp3.Request
           import okhttp3.RequestBody.Companion.toRequestBody
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.nio.ByteBuffer
+          import java.nio.ByteOrder
           import java.util.concurrent.TimeUnit
+
+          object Wav {
+              fun make(pcm: ShortArray): ByteArray {
+                  val dataLen = pcm.size * 2
+                  val b = ByteBuffer.allocate(44 + dataLen).order(ByteOrder.LITTLE_ENDIAN)
+                  b.put("RIFF".toByteArray())
+                  b.putInt(36 + dataLen)
+                  b.put("WAVE".toByteArray())
+                  b.put("fmt ".toByteArray())
+                  b.putInt(16)
+                  b.putShort(1)
+                  b.putShort(1)
+                  b.putInt(16000)
+                  b.putInt(16000 * 2)
+                  b.putShort(2)
+                  b.putShort(16)
+                  b.put("data".toByteArray())
+                  b.putInt(dataLen)
+                  for (v in pcm) b.putShort(v)
+                  return b.array()
+              }
+          }
 
           object Groq {
               private val http = OkHttpClient.Builder()
-                  .readTimeout(180, TimeUnit.SECONDS)
-                  .writeTimeout(180, TimeUnit.SECONDS)
+                  .readTimeout(300, TimeUnit.SECONDS)
+                  .writeTimeout(300, TimeUnit.SECONDS)
                   .build()
+
+              private const val SYS1 = "You are a professional subtitle translator. Translate the user's text into natural, fluent, spoken Bangla (বাংলা). Keep names and meaning accurate. Output ONLY the translation, nothing else."
+              private const val SYS2 = "You are a professional subtitle translator. Translate every item of the given JSON array into natural, fluent, spoken Bangla (বাংলা). Reply ONLY with a JSON object like {\"t\":[...]} having exactly the same number of items in the same order."
 
               fun call(key: String, data: ByteArray, name: String, mime: String, toEnglish: Boolean, verbose: Boolean): String {
                   val model = if (toEnglish) "whisper-large-v3" else "whisper-large-v3-turbo"
@@ -183,6 +229,70 @@ jobs:
                       if (!r.isSuccessful) throw RuntimeException("Error " + r.code + " (Key বা limit দেখো)")
                       return s
                   }
+              }
+
+              private fun chat(key: String, j: JSONObject): String {
+                  val req = Request.Builder()
+                      .url("https://api.groq.com/openai/v1/chat/completions")
+                      .header("Authorization", "Bearer " + key)
+                      .post(j.toString().toRequestBody("application/json".toMediaType()))
+                      .build()
+                  http.newCall(req).execute().use { r ->
+                      val s = r.body?.string() ?: ""
+                      if (!r.isSuccessful) throw RuntimeException("Error " + r.code)
+                      return JSONObject(s).getJSONArray("choices").getJSONObject(0)
+                          .getJSONObject("message").getString("content").trim()
+                  }
+              }
+
+              private fun msgs(sys: String, user: String): JSONArray {
+                  val m = JSONArray()
+                  m.put(JSONObject().put("role", "system").put("content", sys))
+                  m.put(JSONObject().put("role", "user").put("content", user))
+                  return m
+              }
+
+              fun translate(key: String, text: String, model: String): String {
+                  val j = JSONObject()
+                      .put("model", model)
+                      .put("messages", msgs(SYS1, text))
+                      .put("temperature", 0.2)
+                  return chat(key, j)
+              }
+
+              private fun batch(key: String, part: List<String>, model: String): List<String> {
+                  val arr = JSONArray()
+                  for (t in part) arr.put(t)
+                  val j = JSONObject()
+                      .put("model", model)
+                      .put("messages", msgs(SYS2, arr.toString()))
+                      .put("temperature", 0.2)
+                      .put("response_format", JSONObject().put("type", "json_object"))
+                  val a = JSONObject(chat(key, j)).getJSONArray("t")
+                  if (a.length() != part.size) throw RuntimeException("size")
+                  val out = ArrayList<String>()
+                  for (i in 0 until a.length()) out.add(a.getString(i))
+                  return out
+              }
+
+              fun translateMany(key: String, texts: List<String>, model: String): List<String> {
+                  val out = ArrayList<String>()
+                  var i = 0
+                  while (i < texts.size) {
+                      val part = texts.subList(i, minOf(i + 25, texts.size))
+                      var res: List<String> = part
+                      try {
+                          res = batch(key, part, model)
+                      } catch (e: Exception) {
+                          try {
+                              res = batch(key, part, "llama-3.1-8b-instant")
+                          } catch (e2: Exception) {
+                          }
+                      }
+                      out.addAll(res)
+                      i += 25
+                  }
+                  return out
               }
           }
 
@@ -223,25 +333,92 @@ jobs:
                       }
                   }
               }
+          }
 
-              fun many(texts: List<String>, target: String, cb: (List<String>) -> Unit) {
-                  prepare(texts.joinToString(" "), target) { tr ->
-                      if (tr == null) {
-                          cb(texts)
-                      } else {
-                          val out = ArrayList<String>()
-                          fun step(i: Int) {
-                              if (i >= texts.size) {
-                                  cb(out)
-                              } else {
-                                  tr.translate(texts[i])
-                                      .addOnSuccessListener { out.add(it); step(i + 1) }
-                                      .addOnFailureListener { out.add(texts[i]); step(i + 1) }
-                              }
-                          }
-                          step(0)
+          object Dec {
+              fun run(ctx: Context, uri: Uri, onChunk: (ShortArray, Double, Int) -> Unit) {
+                  val ex = MediaExtractor()
+                  ex.setDataSource(ctx, uri, null)
+                  var track = -1
+                  for (i in 0 until ex.trackCount) {
+                      val m = ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: ""
+                      if (m.startsWith("audio/")) {
+                          track = i
+                          break
                       }
                   }
+                  if (track < 0) throw RuntimeException("ফাইলে অডিও নেই")
+                  ex.selectTrack(track)
+                  val fmt = ex.getTrackFormat(track)
+                  val codec = MediaCodec.createDecoderByType(fmt.getString(MediaFormat.KEY_MIME)!!)
+                  codec.configure(fmt, null, null, 0)
+                  codec.start()
+                  var sr = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                  var ch = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                  var step = sr / 16000.0
+                  val per = 16000 * 480
+                  val buf = ShortArray(per)
+                  var n = 0
+                  var idx = 0
+                  var phase = 0.0
+                  var sum = 0.0
+                  var cnt = 0
+                  val info = MediaCodec.BufferInfo()
+                  var inDone = false
+                  var outDone = false
+                  while (!outDone) {
+                      if (!inDone) {
+                          val ii = codec.dequeueInputBuffer(10000)
+                          if (ii >= 0) {
+                              val ib = codec.getInputBuffer(ii)!!
+                              val sz = ex.readSampleData(ib, 0)
+                              if (sz < 0) {
+                                  codec.queueInputBuffer(ii, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                  inDone = true
+                              } else {
+                                  codec.queueInputBuffer(ii, 0, sz, ex.sampleTime, 0)
+                                  ex.advance()
+                              }
+                          }
+                      }
+                      val oi = codec.dequeueOutputBuffer(info, 10000)
+                      if (oi >= 0) {
+                          val ob = codec.getOutputBuffer(oi)!!
+                          ob.position(info.offset)
+                          ob.limit(info.offset + info.size)
+                          val s = ob.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                          while (s.remaining() >= ch) {
+                              var m = 0
+                              for (c in 0 until ch) m += s.get()
+                              sum += m.toDouble() / ch
+                              cnt++
+                              phase += 1.0
+                              if (phase >= step) {
+                                  phase -= step
+                                  buf[n] = (sum / cnt).toInt().toShort()
+                                  n++
+                                  sum = 0.0
+                                  cnt = 0
+                                  if (n == per) {
+                                      onChunk(buf.copyOf(n), idx * 480.0, idx)
+                                      idx++
+                                      n = 0
+                                  }
+                              }
+                          }
+                          codec.releaseOutputBuffer(oi, false)
+                          if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) outDone = true
+                      } else if (oi == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                          val f = codec.outputFormat
+                          sr = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                          ch = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                          step = sr / 16000.0
+                      }
+                  }
+                  if (n > 16000) onChunk(buf.copyOf(n), idx * 480.0, idx)
+                  codec.stop()
+                  codec.release()
+                  ex.release()
               }
           }
           EOF
@@ -261,7 +438,6 @@ jobs:
           import android.os.Bundle
           import android.os.Environment
           import android.provider.MediaStore
-          import android.provider.OpenableColumns
           import android.provider.Settings
           import android.view.Gravity
           import android.view.View
@@ -433,7 +609,7 @@ jobs:
 
                   val c2 = card()
                   c2.addView(label("📁 ফাইল থেকে সাবটাইটেল", 17f, Color.WHITE, true))
-                  c2.add(label("অডিও/ভিডিও ফাইল দাও, নিজে সাবটাইটেল বানিয়ে দেবে (সর্বোচ্চ ২৫MB)", 13f, 0xFF9AA0D0.toInt()), 6)
+                  c2.add(label("অডিও/ভিডিও ফাইল দাও, যত লম্বাই হোক নিজে সাবটাইটেল বানিয়ে দেবে", 13f, 0xFF9AA0D0.toInt()), 6)
                   val pick = btn("ফাইল বাছাই করো", true)
                   c2.add(pick, 14)
                   outTv = label("", 14f, 0xFFE6E8FF.toInt())
@@ -545,6 +721,23 @@ jobs:
                   runOnUiThread { outTv.text = s }
               }
 
+              private fun <T> retry(f: () -> T): T {
+                  var k = 0
+                  while (true) {
+                      try {
+                          return f()
+                      } catch (e: Exception) {
+                          if ((e.message ?: "").contains("429") && k < 8) {
+                              k++
+                              ui("⏳ Groq-এর সীমা, ৩০ সেকেন্ড অপেক্ষা... (" + k + ")")
+                              Thread.sleep(30000)
+                          } else {
+                              throw e
+                          }
+                      }
+                  }
+              }
+
               private fun processFile(uri: Uri) {
                   savePrefs()
                   val key = prefs.getString("key", "") ?: ""
@@ -554,46 +747,39 @@ jobs:
                   }
                   val toEn = tgt == "en"
                   saveBtn.visibility = View.GONE
-                  outTv.text = "প্রসেস হচ্ছে... একটু অপেক্ষা করো"
+                  outTv.text = "প্রসেস শুরু হচ্ছে..."
                   Thread {
                       try {
-                          var name = "file.mp4"
-                          contentResolver.query(uri, null, null, null, null)?.use { c ->
-                              if (c.moveToFirst()) {
-                                  val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                                  if (idx >= 0) name = c.getString(idx)
-                              }
-                          }
-                          val bytes = contentResolver.openInputStream(uri)!!.use { it.readBytes() }
-                          if (bytes.size > 25 * 1024 * 1024) {
-                              ui("ফাইল ২৫MB-এর বেশি, ছোট ফাইল দাও")
-                              return@Thread
-                          }
-                          val mime = contentResolver.getType(uri) ?: "audio/mpeg"
-                          val json = JSONObject(Groq.call(key, bytes, name, mime, toEn, true))
-                          val segs = json.optJSONArray("segments")
                           val st = ArrayList<Double>()
                           val en = ArrayList<Double>()
                           val tx = ArrayList<String>()
-                          if (segs != null) {
-                              for (i in 0 until segs.length()) {
-                                  val s = segs.getJSONObject(i)
-                                  st.add(s.getDouble("start"))
-                                  en.add(s.getDouble("end"))
-                                  tx.add(s.getString("text").trim())
+                          Dec.run(this, uri) { pcm, off, idx ->
+                              ui("প্রসেস হচ্ছে... অংশ " + (idx + 1))
+                              val wav = Wav.make(pcm)
+                              val json = JSONObject(retry { Groq.call(key, wav, "a.wav", "audio/wav", toEn, true) })
+                              val segs = json.optJSONArray("segments")
+                              if (segs != null) {
+                                  for (i in 0 until segs.length()) {
+                                      val s = segs.getJSONObject(i)
+                                      val txt = s.getString("text").trim()
+                                      if (txt.isNotEmpty()) {
+                                          st.add(s.getDouble("start") + off)
+                                          en.add(s.getDouble("end") + off)
+                                          tx.add(txt)
+                                      }
+                                  }
                               }
                           }
                           if (tx.isEmpty()) {
                               ui("কোনো কথা পাওয়া যায়নি")
                               return@Thread
                           }
-                          runOnUiThread {
-                              if (toEn) {
-                                  finishSrt(st, en, tx)
-                              } else {
-                                  Tr.many(tx, "bn") { finishSrt(st, en, it) }
-                              }
+                          var fin: List<String> = tx
+                          if (!toEn) {
+                              ui("বাংলা অনুবাদ হচ্ছে...")
+                              fin = Groq.translateMany(key, tx, "llama-3.3-70b-versatile")
                           }
+                          runOnUiThread { finishSrt(st, en, fin) }
                       } catch (e: Exception) {
                           ui("সমস্যা: " + e.message)
                       }
@@ -662,8 +848,6 @@ jobs:
           import android.widget.LinearLayout
           import android.widget.TextView
           import org.json.JSONObject
-          import java.nio.ByteBuffer
-          import java.nio.ByteOrder
           import java.util.concurrent.Executors
           import java.util.concurrent.atomic.AtomicInteger
           import kotlin.math.sqrt
@@ -679,7 +863,11 @@ jobs:
               private var wm: WindowManager? = null
               private var box: View? = null
               private var tv: TextView? = null
+              private var orig: TextView? = null
               private var size = 18f
+              private var dual = false
+              private var ci = 0
+              private val colors = intArrayOf(Color.WHITE, 0xFFFFE066.toInt(), 0xFF7CF5FF.toInt(), 0xFF8CFF9E.toInt())
               private val main = Handler(Looper.getMainLooper())
               private val net = Executors.newSingleThreadExecutor()
               private val pending = AtomicInteger(0)
@@ -734,7 +922,7 @@ jobs:
                   b.text = label
                   b.setTextColor(Color.WHITE)
                   b.textSize = 16f
-                  b.setPadding(30, 10, 30, 10)
+                  b.setPadding(22, 10, 22, 10)
                   b.setOnClickListener { f() }
                   return b
               }
@@ -755,16 +943,39 @@ jobs:
 
                   val t = TextView(this)
                   t.text = "সাবটাইটেল এখানে আসবে..."
-                  t.setTextColor(Color.WHITE)
+                  t.setTextColor(colors[0])
                   t.textSize = size
                   t.gravity = Gravity.CENTER
                   t.setPadding(8, 8, 8, 16)
 
+                  val o = TextView(this)
+                  o.setTextColor(0xFF9AA0D0.toInt())
+                  o.textSize = size * 0.7f
+                  o.gravity = Gravity.CENTER
+                  o.setPadding(8, 8, 8, 0)
+                  o.visibility = View.GONE
+
                   val bar = LinearLayout(this)
                   bar.orientation = LinearLayout.HORIZONTAL
                   bar.gravity = Gravity.END
-                  bar.addView(chip("A−") { size = maxOf(10f, size - 2f); t.textSize = size })
-                  bar.addView(chip("A+") { size = minOf(48f, size + 2f); t.textSize = size })
+                  bar.addView(chip("A−") {
+                      size = maxOf(10f, size - 2f)
+                      t.textSize = size
+                      o.textSize = size * 0.7f
+                  })
+                  bar.addView(chip("A+") {
+                      size = minOf(48f, size + 2f)
+                      t.textSize = size
+                      o.textSize = size * 0.7f
+                  })
+                  bar.addView(chip("🎨") {
+                      ci = (ci + 1) % colors.size
+                      t.setTextColor(colors[ci])
+                  })
+                  bar.addView(chip("২ভা") {
+                      dual = !dual
+                      o.visibility = if (dual) View.VISIBLE else View.GONE
+                  })
                   bar.addView(chip("✕") { stopSelf() })
 
                   val grip = TextView(this)
@@ -775,6 +986,7 @@ jobs:
                   grip.setPadding(20, 0, 8, 8)
 
                   bx.addView(bar)
+                  bx.addView(o)
                   bx.addView(t)
                   bx.addView(grip)
 
@@ -829,10 +1041,14 @@ jobs:
                   w.addView(bx, p)
                   box = bx
                   tv = t
+                  orig = o
               }
 
-              private fun show(s: String) {
-                  main.post { tv?.text = s }
+              private fun show(s: String, original: String) {
+                  main.post {
+                      tv?.text = s
+                      orig?.text = original
+                  }
               }
 
               @SuppressLint("MissingPermission")
@@ -869,7 +1085,7 @@ jobs:
                               }
                           }
                           if (n == chunk.size && isLoud(chunk) && pending.get() < 2) {
-                              val wav = toWav(chunk)
+                              val wav = Wav.make(chunk)
                               pending.incrementAndGet()
                               net.execute { transcribe(wav) }
                           }
@@ -883,26 +1099,6 @@ jobs:
                   return sqrt(sum / a.size) > 300
               }
 
-              private fun toWav(pcm: ShortArray): ByteArray {
-                  val dataLen = pcm.size * 2
-                  val b = ByteBuffer.allocate(44 + dataLen).order(ByteOrder.LITTLE_ENDIAN)
-                  b.put("RIFF".toByteArray())
-                  b.putInt(36 + dataLen)
-                  b.put("WAVE".toByteArray())
-                  b.put("fmt ".toByteArray())
-                  b.putInt(16)
-                  b.putShort(1)
-                  b.putShort(1)
-                  b.putInt(16000)
-                  b.putInt(16000 * 2)
-                  b.putShort(2)
-                  b.putShort(16)
-                  b.put("data".toByteArray())
-                  b.putInt(dataLen)
-                  for (v in pcm) b.putShort(v)
-                  return b.array()
-              }
-
               private fun transcribe(wav: ByteArray) {
                   try {
                       val toEn = target == "en"
@@ -910,13 +1106,33 @@ jobs:
                       val t = JSONObject(s).optString("text").trim()
                       if (t.isNotEmpty()) {
                           if (toEn) {
-                              show(t)
+                              show(t, "")
                           } else {
-                              main.post { Tr.one(t, "bn") { show(it) } }
+                              var out: String? = null
+                              try {
+                                  out = Groq.translate(apiKey, t, "llama-3.3-70b-versatile")
+                              } catch (e: Exception) {
+                                  try {
+                                      out = Groq.translate(apiKey, t, "llama-3.1-8b-instant")
+                                  } catch (e2: Exception) {
+                                  }
+                              }
+                              val res = out
+                              if (res != null) {
+                                  show(res, t)
+                              } else {
+                                  main.post { Tr.one(t, "bn") { show(it, t) } }
+                              }
                           }
                       }
                   } catch (e: Exception) {
-                      if ((e.message ?: "").contains("429")) { show("⏳ একটু অপেক্ষা..."); Thread.sleep(6000) } else { show("⚠ " + (e.message ?: "Internet সমস্যা")) }
+                      val m = e.message ?: ""
+                      if (m.contains("429")) {
+                          show("⏳ একটু অপেক্ষা...", "")
+                          Thread.sleep(6000)
+                      } else {
+                          show("⚠ " + (if (m.isEmpty()) "Internet সমস্যা" else m), "")
+                      }
                   } finally {
                       pending.decrementAndGet()
                   }
@@ -945,6 +1161,7 @@ jobs:
         with:
           name: LiveSubtitle-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
