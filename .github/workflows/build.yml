@@ -17,6 +17,8 @@ jobs:
       - name: Generate project files
         run: |
           mkdir -p app/src/main/java/com/example/livesub
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
 
           cat > settings.gradle.kts <<'EOF'
           pluginManagement {
@@ -60,8 +62,8 @@ jobs:
                   applicationId = "com.example.livesub"
                   minSdk = 29
                   targetSdk = 34
-                  versionCode = 1
-                  versionName = "1.0"
+                  versionCode = 2
+                  versionName = "2.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -89,7 +91,9 @@ jobs:
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <application
                   android:label="Live Subtitle"
-                  android:theme="@android:style/Theme.DeviceDefault.Light">
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -104,93 +108,400 @@ jobs:
           </manifest>
           EOF
 
+          cat > app/src/main/res/drawable/ic_bg.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <gradient android:startColor="#6C4DFF" android:endColor="#2DD4FF" android:angle="45" />
+          </shape>
+          EOF
+
+          cat > app/src/main/res/drawable/logo_bg.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <gradient android:startColor="#6C4DFF" android:endColor="#2DD4FF" android:angle="45" />
+              <corners android:radius="20dp" />
+          </shape>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_fg.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#FFFFFF"
+                  android:pathData="M34,38h40a6,6 0 0 1 6,6v18a6,6 0 0 1 -6,6H58l-8,8v-8H34a6,6 0 0 1 -6,-6V44a6,6 0 0 1 6,-6z" />
+              <path android:fillColor="#6C4DFF" android:pathData="M36,47h32v4H36z" />
+              <path android:fillColor="#6C4DFF" android:pathData="M36,55h20v4H36z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@drawable/ic_bg" />
+              <foreground android:drawable="@drawable/ic_fg" />
+          </adaptive-icon>
+          EOF
+
+          cat > app/src/main/java/com/example/livesub/Util.kt <<'EOF'
+          package com.example.livesub
+
+          import com.google.mlkit.nl.languageid.LanguageIdentification
+          import com.google.mlkit.nl.translate.TranslateLanguage
+          import com.google.mlkit.nl.translate.Translation
+          import com.google.mlkit.nl.translate.Translator
+          import com.google.mlkit.nl.translate.TranslatorOptions
+          import okhttp3.MediaType.Companion.toMediaType
+          import okhttp3.MultipartBody
+          import okhttp3.OkHttpClient
+          import okhttp3.Request
+          import okhttp3.RequestBody.Companion.toRequestBody
+          import java.util.concurrent.TimeUnit
+
+          object Groq {
+              private val http = OkHttpClient.Builder()
+                  .readTimeout(180, TimeUnit.SECONDS)
+                  .writeTimeout(180, TimeUnit.SECONDS)
+                  .build()
+
+              fun call(key: String, data: ByteArray, name: String, mime: String, toEnglish: Boolean, verbose: Boolean): String {
+                  val model = if (toEnglish) "whisper-large-v3" else "whisper-large-v3-turbo"
+                  val ep = if (toEnglish) "translations" else "transcriptions"
+                  val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+                      .addFormDataPart("model", model)
+                      .addFormDataPart("response_format", if (verbose) "verbose_json" else "json")
+                      .addFormDataPart("file", name, data.toRequestBody(mime.toMediaType()))
+                      .build()
+                  val req = Request.Builder()
+                      .url("https://api.groq.com/openai/v1/audio/" + ep)
+                      .header("Authorization", "Bearer " + key)
+                      .post(body)
+                      .build()
+                  http.newCall(req).execute().use { r ->
+                      val s = r.body?.string() ?: ""
+                      if (!r.isSuccessful) throw RuntimeException("Error " + r.code + " (Key বা limit দেখো)")
+                      return s
+                  }
+              }
+          }
+
+          object Tr {
+              private val cache = HashMap<String, Translator>()
+
+              private fun prepare(text: String, target: String, cb: (Translator?) -> Unit) {
+                  LanguageIdentification.getClient().identifyLanguage(text)
+                      .addOnSuccessListener { code ->
+                          val src = TranslateLanguage.fromLanguageTag(code)
+                          if (code == "und" || code == target || src == null) {
+                              cb(null)
+                          } else {
+                              val tr = cache.getOrPut(src + ">" + target) {
+                                  Translation.getClient(
+                                      TranslatorOptions.Builder()
+                                          .setSourceLanguage(src)
+                                          .setTargetLanguage(target)
+                                          .build()
+                                  )
+                              }
+                              tr.downloadModelIfNeeded()
+                                  .addOnSuccessListener { cb(tr) }
+                                  .addOnFailureListener { cb(null) }
+                          }
+                      }
+                      .addOnFailureListener { cb(null) }
+              }
+
+              fun one(text: String, target: String, cb: (String) -> Unit) {
+                  prepare(text, target) { tr ->
+                      if (tr == null) {
+                          cb(text)
+                      } else {
+                          tr.translate(text)
+                              .addOnSuccessListener { cb(it) }
+                              .addOnFailureListener { cb(text) }
+                      }
+                  }
+              }
+
+              fun many(texts: List<String>, target: String, cb: (List<String>) -> Unit) {
+                  prepare(texts.joinToString(" "), target) { tr ->
+                      if (tr == null) {
+                          cb(texts)
+                      } else {
+                          val out = ArrayList<String>()
+                          fun step(i: Int) {
+                              if (i >= texts.size) {
+                                  cb(out)
+                              } else {
+                                  tr.translate(texts[i])
+                                      .addOnSuccessListener { out.add(it); step(i + 1) }
+                                      .addOnFailureListener { out.add(texts[i]); step(i + 1) }
+                              }
+                          }
+                          step(0)
+                      }
+                  }
+              }
+          }
+          EOF
+
           cat > app/src/main/java/com/example/livesub/MainActivity.kt <<'EOF'
           package com.example.livesub
 
           import android.Manifest
           import android.app.Activity
+          import android.content.ContentValues
           import android.content.Intent
           import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.drawable.GradientDrawable
           import android.media.projection.MediaProjectionManager
           import android.net.Uri
           import android.os.Bundle
+          import android.os.Environment
+          import android.provider.MediaStore
+          import android.provider.OpenableColumns
           import android.provider.Settings
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
           import android.widget.Button
           import android.widget.EditText
+          import android.widget.ImageView
           import android.widget.LinearLayout
-          import android.widget.RadioButton
-          import android.widget.RadioGroup
+          import android.widget.ScrollView
+          import android.widget.Switch
           import android.widget.TextView
           import android.widget.Toast
+          import org.json.JSONObject
+          import java.util.Locale
 
           class MainActivity : Activity() {
+              private val prefs by lazy { getSharedPreferences("p", MODE_PRIVATE) }
               private lateinit var keyInput: EditText
-              private lateinit var rbBn: RadioButton
+              private lateinit var statusTv: TextView
+              private lateinit var outTv: TextView
+              private lateinit var saveBtn: Button
+              private lateinit var chipBn: TextView
+              private lateinit var chipEn: TextView
+              private lateinit var autoSw: Switch
+              private var tgt = "bn"
+              private var srt = ""
+
+              private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+              private fun shape(color: Int, r: Int): GradientDrawable {
+                  val g = GradientDrawable()
+                  g.setColor(color)
+                  g.cornerRadius = dp(r).toFloat()
+                  return g
+              }
+
+              private fun grad(r: Int): GradientDrawable {
+                  val g = GradientDrawable(
+                      GradientDrawable.Orientation.LEFT_RIGHT,
+                      intArrayOf(0xFF6C4DFF.toInt(), 0xFF2DD4FF.toInt())
+                  )
+                  g.cornerRadius = dp(r).toFloat()
+                  return g
+              }
+
+              private fun LinearLayout.add(v: View, top: Int = 12) {
+                  val p = LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT,
+                      ViewGroup.LayoutParams.WRAP_CONTENT
+                  )
+                  p.topMargin = dp(top)
+                  addView(v, p)
+              }
+
+              private fun label(s: String, size: Float, color: Int, bold: Boolean = false): TextView {
+                  val t = TextView(this)
+                  t.text = s
+                  t.textSize = size
+                  t.setTextColor(color)
+                  if (bold) t.setTypeface(t.typeface, android.graphics.Typeface.BOLD)
+                  return t
+              }
+
+              private fun btn(s: String, primary: Boolean): Button {
+                  val b = Button(this)
+                  b.text = s
+                  b.isAllCaps = false
+                  b.textSize = 16f
+                  b.setTextColor(Color.WHITE)
+                  b.background = if (primary) grad(16) else shape(0xFF2A2F55.toInt(), 16)
+                  b.stateListAnimator = null
+                  return b
+              }
+
+              private fun chip(s: String): TextView {
+                  val t = label(s, 16f, Color.WHITE, true)
+                  t.gravity = Gravity.CENTER
+                  return t
+              }
+
+              private fun card(): LinearLayout {
+                  val c = LinearLayout(this)
+                  c.orientation = LinearLayout.VERTICAL
+                  c.background = shape(0xFF171B3A.toInt(), 24)
+                  c.setPadding(dp(18), dp(16), dp(18), dp(18))
+                  return c
+              }
+
+              private fun setLang(l: String) {
+                  tgt = l
+                  prefs.edit().putString("target", l).apply()
+                  chipBn.background = if (l == "bn") grad(14) else shape(0xFF2A2F55.toInt(), 14)
+                  chipEn.background = if (l == "en") grad(14) else shape(0xFF2A2F55.toInt(), 14)
+              }
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  val prefs = getSharedPreferences("p", MODE_PRIVATE)
+                  window.statusBarColor = 0xFF0B0E22.toInt()
+                  window.navigationBarColor = 0xFF1A1245.toInt()
+                  tgt = prefs.getString("target", "bn") ?: "bn"
 
+                  val sv = ScrollView(this)
+                  sv.background = GradientDrawable(
+                      GradientDrawable.Orientation.TOP_BOTTOM,
+                      intArrayOf(0xFF0B0E22.toInt(), 0xFF1A1245.toInt())
+                  )
                   val root = LinearLayout(this)
                   root.orientation = LinearLayout.VERTICAL
-                  root.setPadding(48, 120, 48, 48)
+                  root.setPadding(dp(20), dp(48), dp(20), dp(32))
+                  sv.addView(root)
 
-                  val info = TextView(this)
-                  info.text = "Groq API Key দাও (console.groq.com থেকে ফ্রি):"
+                  val head = LinearLayout(this)
+                  head.orientation = LinearLayout.HORIZONTAL
+                  head.gravity = Gravity.CENTER_VERTICAL
+                  val logo = ImageView(this)
+                  logo.setBackgroundResource(R.drawable.logo_bg)
+                  logo.setImageResource(R.drawable.ic_fg)
+                  head.addView(logo, LinearLayout.LayoutParams(dp(68), dp(68)))
+                  val titles = LinearLayout(this)
+                  titles.orientation = LinearLayout.VERTICAL
+                  titles.setPadding(dp(14), 0, 0, 0)
+                  titles.addView(label("Live Subtitle", 26f, Color.WHITE, true))
+                  titles.addView(label("যেকোনো ভাষা → বাংলা / English", 13f, 0xFF9AA0D0.toInt()))
+                  head.addView(titles)
+                  root.addView(head)
+
+                  statusTv = label("", 14f, 0xFF9AA0D0.toInt(), true)
+                  root.add(statusTv, 18)
+
+                  val c1 = card()
+                  c1.addView(label("Groq API Key", 14f, 0xFF9AA0D0.toInt()))
                   keyInput = EditText(this)
                   keyInput.setSingleLine()
                   keyInput.hint = "gsk_..."
+                  keyInput.setTextColor(Color.WHITE)
+                  keyInput.setHintTextColor(0xFF6A70A0.toInt())
+                  keyInput.background = shape(0xFF0F1230.toInt(), 14)
+                  keyInput.setPadding(dp(14), dp(12), dp(14), dp(12))
                   keyInput.setText(prefs.getString("key", ""))
+                  c1.add(keyInput, 8)
 
-                  val group = RadioGroup(this)
-                  rbBn = RadioButton(this)
-                  rbBn.text = "বাংলায় সাবটাইটেল"
-                  rbBn.id = 1001
-                  val rbEn = RadioButton(this)
-                  rbEn.text = "English subtitle"
-                  rbEn.id = 1002
-                  group.addView(rbBn)
-                  group.addView(rbEn)
-                  val isBn = prefs.getString("target", "bn") == "bn"
-                  rbBn.isChecked = isBn
-                  rbEn.isChecked = !isBn
+                  c1.add(label("সাবটাইটেল কোন ভাষায় চাও?", 14f, 0xFF9AA0D0.toInt()), 16)
+                  val row = LinearLayout(this)
+                  row.orientation = LinearLayout.HORIZONTAL
+                  chipBn = chip("বাংলা")
+                  chipEn = chip("English")
+                  chipBn.setOnClickListener { setLang("bn") }
+                  chipEn.setOnClickListener { setLang("en") }
+                  val lpL = LinearLayout.LayoutParams(0, dp(48), 1f)
+                  lpL.rightMargin = dp(6)
+                  val lpR = LinearLayout.LayoutParams(0, dp(48), 1f)
+                  lpR.leftMargin = dp(6)
+                  row.addView(chipBn, lpL)
+                  row.addView(chipEn, lpR)
+                  c1.add(row, 8)
+                  setLang(tgt)
 
-                  val start = Button(this)
-                  start.text = "চালু করো"
-                  val stop = Button(this)
-                  stop.text = "বন্ধ করো"
+                  autoSw = Switch(this)
+                  autoSw.text = "অ্যাপ খুললেই নিজে চালু হবে"
+                  autoSw.setTextColor(Color.WHITE)
+                  autoSw.isChecked = prefs.getBoolean("auto", true)
+                  c1.add(autoSw, 16)
 
-                  root.addView(info)
-                  root.addView(keyInput)
-                  root.addView(group)
-                  root.addView(start)
-                  root.addView(stop)
-                  setContentView(root)
+                  val start = btn("▶  লাইভ সাবটাইটেল চালু করো", true)
+                  val stop = btn("■  বন্ধ করো", false)
+                  c1.add(start, 16)
+                  c1.add(stop, 8)
+                  root.add(c1, 16)
 
-                  start.setOnClickListener {
-                      prefs.edit()
-                          .putString("key", keyInput.text.toString().trim())
-                          .putString("target", if (rbBn.isChecked) "bn" else "en")
-                          .apply()
-                      if (!Settings.canDrawOverlays(this)) {
-                          startActivity(
-                              Intent(
-                                  Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                  Uri.parse("package:$packageName")
-                              )
-                          )
-                          Toast.makeText(this, "Overlay permission দিয়ে ফিরে এসে আবার চাপো", Toast.LENGTH_LONG).show()
-                      } else {
-                          requestPermissions(
-                              arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS),
-                              1
-                          )
-                      }
-                  }
+                  val c2 = card()
+                  c2.addView(label("📁 ফাইল থেকে সাবটাইটেল", 17f, Color.WHITE, true))
+                  c2.add(label("অডিও/ভিডিও ফাইল দাও, নিজে সাবটাইটেল বানিয়ে দেবে (সর্বোচ্চ ২৫MB)", 13f, 0xFF9AA0D0.toInt()), 6)
+                  val pick = btn("ফাইল বাছাই করো", true)
+                  c2.add(pick, 14)
+                  outTv = label("", 14f, 0xFFE6E8FF.toInt())
+                  outTv.setTextIsSelectable(true)
+                  c2.add(outTv, 14)
+                  saveBtn = btn("💾  SRT ফাইল সেভ করো", false)
+                  saveBtn.visibility = View.GONE
+                  c2.add(saveBtn, 12)
+                  root.add(c2, 16)
 
+                  setContentView(sv)
+
+                  start.setOnClickListener { startFlow() }
                   stop.setOnClickListener {
                       stopService(Intent(this, CaptureService::class.java))
+                      CaptureService.active = false
+                      refreshStatus()
                   }
+                  pick.setOnClickListener { pickFile() }
+                  saveBtn.setOnClickListener { saveSrt() }
+
+                  val key = prefs.getString("key", "") ?: ""
+                  if (savedInstanceState == null && autoSw.isChecked && key.isNotEmpty() &&
+                      !CaptureService.active && Settings.canDrawOverlays(this)
+                  ) {
+                      startFlow()
+                  }
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  refreshStatus()
+              }
+
+              private fun refreshStatus() {
+                  if (CaptureService.active) {
+                      statusTv.text = "● চালু আছে"
+                      statusTv.setTextColor(0xFF4ADE80.toInt())
+                  } else {
+                      statusTv.text = "○ বন্ধ আছে"
+                      statusTv.setTextColor(0xFF9AA0D0.toInt())
+                  }
+              }
+
+              private fun savePrefs() {
+                  prefs.edit()
+                      .putString("key", keyInput.text.toString().trim())
+                      .putString("target", tgt)
+                      .putBoolean("auto", autoSw.isChecked)
+                      .apply()
+              }
+
+              private fun startFlow() {
+                  savePrefs()
+                  if (keyInput.text.toString().trim().isEmpty()) {
+                      Toast.makeText(this, "আগে Groq API Key দাও", Toast.LENGTH_LONG).show()
+                      return
+                  }
+                  if (!Settings.canDrawOverlays(this)) {
+                      startActivity(
+                          Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName))
+                      )
+                      Toast.makeText(this, "Overlay permission দিয়ে ফিরে এসো", Toast.LENGTH_LONG).show()
+                      return
+                  }
+                  requestPermissions(
+                      arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS),
+                      1
+                  )
               }
 
               override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -199,21 +510,123 @@ jobs:
                       val mpm = getSystemService(MediaProjectionManager::class.java)
                       startActivityForResult(mpm.createScreenCaptureIntent(), 2)
                   } else {
-                      Toast.makeText(this, "Microphone/Audio permission দরকার", Toast.LENGTH_LONG).show()
+                      Toast.makeText(this, "Audio permission দরকার", Toast.LENGTH_LONG).show()
                   }
+              }
+
+              private fun pickFile() {
+                  val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                  i.addCategory(Intent.CATEGORY_OPENABLE)
+                  i.type = "*/*"
+                  i.putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "video/*"))
+                  startActivityForResult(i, 3)
               }
 
               override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
                   super.onActivityResult(requestCode, resultCode, data)
-                  if (requestCode == 2 && resultCode == RESULT_OK && data != null) {
-                      val prefs = getSharedPreferences("p", MODE_PRIVATE)
+                  if (resultCode != RESULT_OK || data == null) return
+                  if (requestCode == 2) {
                       val i = Intent(this, CaptureService::class.java)
                       i.putExtra("code", resultCode)
                       i.putExtra("data", data)
                       i.putExtra("key", prefs.getString("key", ""))
-                      i.putExtra("target", prefs.getString("target", "bn"))
+                      i.putExtra("target", tgt)
                       startForegroundService(i)
                       Toast.makeText(this, "চালু হয়েছে। এবার যেকোনো ভিডিও চালাও", Toast.LENGTH_LONG).show()
+                      statusTv.postDelayed({ refreshStatus() }, 800)
+                  } else if (requestCode == 3) {
+                      val u = data.data
+                      if (u != null) processFile(u)
+                  }
+              }
+
+              private fun ui(s: String) {
+                  runOnUiThread { outTv.text = s }
+              }
+
+              private fun processFile(uri: Uri) {
+                  savePrefs()
+                  val key = prefs.getString("key", "") ?: ""
+                  if (key.isEmpty()) {
+                      Toast.makeText(this, "আগে Groq API Key দাও", Toast.LENGTH_LONG).show()
+                      return
+                  }
+                  val toEn = tgt == "en"
+                  saveBtn.visibility = View.GONE
+                  outTv.text = "প্রসেস হচ্ছে... একটু অপেক্ষা করো"
+                  Thread {
+                      try {
+                          var name = "file.mp4"
+                          contentResolver.query(uri, null, null, null, null)?.use { c ->
+                              if (c.moveToFirst()) {
+                                  val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                                  if (idx >= 0) name = c.getString(idx)
+                              }
+                          }
+                          val bytes = contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                          if (bytes.size > 25 * 1024 * 1024) {
+                              ui("ফাইল ২৫MB-এর বেশি, ছোট ফাইল দাও")
+                              return@Thread
+                          }
+                          val mime = contentResolver.getType(uri) ?: "audio/mpeg"
+                          val json = JSONObject(Groq.call(key, bytes, name, mime, toEn, true))
+                          val segs = json.optJSONArray("segments")
+                          val st = ArrayList<Double>()
+                          val en = ArrayList<Double>()
+                          val tx = ArrayList<String>()
+                          if (segs != null) {
+                              for (i in 0 until segs.length()) {
+                                  val s = segs.getJSONObject(i)
+                                  st.add(s.getDouble("start"))
+                                  en.add(s.getDouble("end"))
+                                  tx.add(s.getString("text").trim())
+                              }
+                          }
+                          if (tx.isEmpty()) {
+                              ui("কোনো কথা পাওয়া যায়নি")
+                              return@Thread
+                          }
+                          runOnUiThread {
+                              if (toEn) {
+                                  finishSrt(st, en, tx)
+                              } else {
+                                  Tr.many(tx, "bn") { finishSrt(st, en, it) }
+                              }
+                          }
+                      } catch (e: Exception) {
+                          ui("সমস্যা: " + e.message)
+                      }
+                  }.start()
+              }
+
+              private fun ts(t: Double): String {
+                  val ms = (t * 1000).toLong()
+                  return String.format(Locale.US, "%02d:%02d:%02d,%03d", ms / 3600000, ms / 60000 % 60, ms / 1000 % 60, ms % 1000)
+              }
+
+              private fun finishSrt(st: List<Double>, en: List<Double>, tx: List<String>) {
+                  val sb = StringBuilder()
+                  val view = StringBuilder()
+                  for (i in tx.indices) {
+                      sb.append(i + 1).append('\n')
+                          .append(ts(st[i])).append(" --> ").append(ts(en[i])).append('\n')
+                          .append(tx[i]).append("\n\n")
+                      view.append(tx[i]).append('\n')
+                  }
+                  srt = sb.toString()
+                  outTv.text = view.toString()
+                  saveBtn.visibility = View.VISIBLE
+              }
+
+              private fun saveSrt() {
+                  val v = ContentValues()
+                  v.put(MediaStore.Downloads.DISPLAY_NAME, "subtitle_" + System.currentTimeMillis() + ".srt")
+                  v.put(MediaStore.Downloads.MIME_TYPE, "application/x-subrip")
+                  v.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                  val u = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v)
+                  if (u != null) {
+                      contentResolver.openOutputStream(u)?.use { it.write(srt.toByteArray()) }
+                      Toast.makeText(this, "Downloads ফোল্ডারে সেভ হয়েছে", Toast.LENGTH_LONG).show()
                   }
               }
           }
@@ -231,6 +644,7 @@ jobs:
           import android.content.pm.ServiceInfo
           import android.graphics.Color
           import android.graphics.PixelFormat
+          import android.graphics.drawable.GradientDrawable
           import android.media.AudioAttributes
           import android.media.AudioFormat
           import android.media.AudioPlaybackCaptureConfiguration
@@ -241,38 +655,35 @@ jobs:
           import android.os.IBinder
           import android.os.Looper
           import android.view.Gravity
+          import android.view.MotionEvent
           import android.view.View
           import android.view.WindowManager
+          import android.widget.LinearLayout
           import android.widget.TextView
-          import com.google.mlkit.nl.languageid.LanguageIdentification
-          import com.google.mlkit.nl.translate.TranslateLanguage
-          import com.google.mlkit.nl.translate.Translation
-          import com.google.mlkit.nl.translate.Translator
-          import com.google.mlkit.nl.translate.TranslatorOptions
-          import okhttp3.MediaType.Companion.toMediaType
-          import okhttp3.MultipartBody
-          import okhttp3.OkHttpClient
-          import okhttp3.Request
-          import okhttp3.RequestBody.Companion.toRequestBody
           import org.json.JSONObject
           import java.nio.ByteBuffer
           import java.nio.ByteOrder
           import java.util.concurrent.Executors
+          import java.util.concurrent.atomic.AtomicInteger
           import kotlin.math.sqrt
 
           class CaptureService : Service() {
+              companion object {
+                  @Volatile var active = false
+              }
+
               private var projection: MediaProjection? = null
               private var record: AudioRecord? = null
               @Volatile private var running = false
               private var wm: WindowManager? = null
+              private var box: View? = null
               private var tv: TextView? = null
+              private var size = 18f
               private val main = Handler(Looper.getMainLooper())
-              private val http = OkHttpClient()
-              private val translators = HashMap<String, Translator>()
               private val net = Executors.newSingleThreadExecutor()
+              private val pending = AtomicInteger(0)
               private var target = "bn"
               private var apiKey = ""
-              private val clearTask = Runnable { tv?.visibility = View.GONE }
 
               override fun onBind(intent: Intent?): IBinder? = null
 
@@ -313,38 +724,114 @@ jobs:
 
                   showOverlay()
                   startCapture(p)
+                  active = true
                   return START_NOT_STICKY
               }
 
+              private fun chip(label: String, f: () -> Unit): TextView {
+                  val b = TextView(this)
+                  b.text = label
+                  b.setTextColor(Color.WHITE)
+                  b.textSize = 16f
+                  b.setPadding(30, 10, 30, 10)
+                  b.setOnClickListener { f() }
+                  return b
+              }
+
               private fun showOverlay() {
-                  wm = getSystemService(WindowManager::class.java)
+                  val w = getSystemService(WindowManager::class.java)
+                  wm = w
+                  val dm = resources.displayMetrics
+
+                  val bx = LinearLayout(this)
+                  bx.orientation = LinearLayout.VERTICAL
+                  val bg = GradientDrawable()
+                  bg.setColor(0xE60F1230.toInt())
+                  bg.cornerRadius = 40f
+                  bg.setStroke(3, 0xFF6C4DFF.toInt())
+                  bx.background = bg
+                  bx.setPadding(28, 8, 28, 8)
+
                   val t = TextView(this)
+                  t.text = "সাবটাইটেল এখানে আসবে..."
                   t.setTextColor(Color.WHITE)
-                  t.textSize = 18f
-                  t.setBackgroundColor(0xAA000000.toInt())
-                  t.setPadding(24, 16, 24, 16)
+                  t.textSize = size
                   t.gravity = Gravity.CENTER
-                  t.visibility = View.GONE
-                  val lp = WindowManager.LayoutParams(
-                      WindowManager.LayoutParams.MATCH_PARENT,
+                  t.setPadding(8, 8, 8, 16)
+
+                  val bar = LinearLayout(this)
+                  bar.orientation = LinearLayout.HORIZONTAL
+                  bar.gravity = Gravity.END
+                  bar.addView(chip("A−") { size = maxOf(10f, size - 2f); t.textSize = size })
+                  bar.addView(chip("A+") { size = minOf(48f, size + 2f); t.textSize = size })
+                  bar.addView(chip("✕") { stopSelf() })
+
+                  val grip = TextView(this)
+                  grip.text = "◢"
+                  grip.setTextColor(0xFF9AA0D0.toInt())
+                  grip.textSize = 20f
+                  grip.gravity = Gravity.END
+                  grip.setPadding(20, 0, 8, 8)
+
+                  bx.addView(bar)
+                  bx.addView(t)
+                  bx.addView(grip)
+
+                  val p = WindowManager.LayoutParams(
+                      (dm.widthPixels * 0.92).toInt(),
                       WindowManager.LayoutParams.WRAP_CONTENT,
                       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                       PixelFormat.TRANSLUCENT
                   )
-                  lp.gravity = Gravity.BOTTOM
-                  lp.y = 200
-                  wm?.addView(t, lp)
+                  p.gravity = Gravity.TOP or Gravity.START
+                  p.x = (dm.widthPixels * 0.04).toInt()
+                  p.y = (dm.heightPixels * 0.6).toInt()
+
+                  var sx = 0
+                  var sy = 0
+                  var tx = 0f
+                  var ty = 0f
+                  bx.setOnTouchListener { _, e ->
+                      when (e.action) {
+                          MotionEvent.ACTION_DOWN -> {
+                              sx = p.x
+                              sy = p.y
+                              tx = e.rawX
+                              ty = e.rawY
+                          }
+                          MotionEvent.ACTION_MOVE -> {
+                              p.x = sx + (e.rawX - tx).toInt()
+                              p.y = sy + (e.rawY - ty).toInt()
+                              w.updateViewLayout(bx, p)
+                          }
+                      }
+                      true
+                  }
+
+                  var gw = 0
+                  var gx = 0f
+                  grip.setOnTouchListener { _, e ->
+                      when (e.action) {
+                          MotionEvent.ACTION_DOWN -> {
+                              gw = p.width
+                              gx = e.rawX
+                          }
+                          MotionEvent.ACTION_MOVE -> {
+                              p.width = maxOf(300, gw + (e.rawX - gx).toInt())
+                              w.updateViewLayout(bx, p)
+                          }
+                      }
+                      true
+                  }
+
+                  w.addView(bx, p)
+                  box = bx
                   tv = t
               }
 
               private fun show(s: String) {
-                  main.post {
-                      tv?.text = s
-                      tv?.visibility = View.VISIBLE
-                      main.removeCallbacks(clearTask)
-                      main.postDelayed(clearTask, 8000)
-                  }
+                  main.post { tv?.text = s }
               }
 
               @SuppressLint("MissingPermission")
@@ -369,7 +856,7 @@ jobs:
                   rec.startRecording()
 
                   Thread {
-                      val chunk = ShortArray(16000 * 5)
+                      val chunk = ShortArray(16000 * 3)
                       while (running) {
                           var n = 0
                           while (n < chunk.size && running) {
@@ -380,8 +867,9 @@ jobs:
                                   n += r
                               }
                           }
-                          if (n == chunk.size && isLoud(chunk)) {
+                          if (n == chunk.size && isLoud(chunk) && pending.get() < 2) {
                               val wav = toWav(chunk)
+                              pending.incrementAndGet()
                               net.execute { transcribe(wav) }
                           }
                       }
@@ -415,66 +903,31 @@ jobs:
               }
 
               private fun transcribe(wav: ByteArray) {
-                  val body = MultipartBody.Builder().setType(MultipartBody.FORM)
-                      .addFormDataPart("model", "whisper-large-v3-turbo")
-                      .addFormDataPart("response_format", "json")
-                      .addFormDataPart("file", "a.wav", wav.toRequestBody("audio/wav".toMediaType()))
-                      .build()
-                  val req = Request.Builder()
-                      .url("https://api.groq.com/openai/v1/audio/transcriptions")
-                      .header("Authorization", "Bearer $apiKey")
-                      .post(body)
-                      .build()
                   try {
-                      http.newCall(req).execute().use { r ->
-                          val s = r.body?.string() ?: ""
-                          if (r.isSuccessful) {
-                              val t = JSONObject(s).optString("text").trim()
-                              if (t.isNotEmpty()) main.post { handleText(t) }
+                      val toEn = target == "en"
+                      val s = Groq.call(apiKey, wav, "a.wav", "audio/wav", toEn, false)
+                      val t = JSONObject(s).optString("text").trim()
+                      if (t.isNotEmpty()) {
+                          if (toEn) {
+                              show(t)
                           } else {
-                              show("Error " + r.code + " (API key ঠিক আছে?)")
+                              main.post { Tr.one(t, "bn") { show(it) } }
                           }
                       }
                   } catch (e: Exception) {
-                      show("Internet সমস্যা")
+                      show("⚠ " + (e.message ?: "Internet সমস্যা"))
+                  } finally {
+                      pending.decrementAndGet()
                   }
               }
 
-              private fun handleText(text: String) {
-                  LanguageIdentification.getClient().identifyLanguage(text)
-                      .addOnSuccessListener { code ->
-                          val src = TranslateLanguage.fromLanguageTag(code)
-                          if (code == "und" || code == target || src == null) {
-                              show(text)
-                          } else {
-                              val key = src + ">" + target
-                              val tr = translators.getOrPut(key) {
-                                  Translation.getClient(
-                                      TranslatorOptions.Builder()
-                                          .setSourceLanguage(src)
-                                          .setTargetLanguage(target)
-                                          .build()
-                                  )
-                              }
-                              tr.downloadModelIfNeeded()
-                                  .addOnSuccessListener {
-                                      tr.translate(text)
-                                          .addOnSuccessListener { out -> show(out) }
-                                          .addOnFailureListener { show(text) }
-                                  }
-                                  .addOnFailureListener { show(text) }
-                          }
-                      }
-                      .addOnFailureListener { show(text) }
-              }
-
               override fun onDestroy() {
+                  active = false
                   running = false
                   try { record?.stop() } catch (e: Exception) {}
                   record?.release()
                   try { projection?.stop() } catch (e: Exception) {}
-                  try { tv?.let { wm?.removeView(it) } } catch (e: Exception) {}
-                  translators.values.forEach { it.close() }
+                  try { box?.let { wm?.removeView(it) } } catch (e: Exception) {}
                   super.onDestroy()
               }
           }
