@@ -856,7 +856,7 @@ jobs:
                   rec.startRecording()
 
                   Thread {
-                      val chunk = ShortArray(16000 * 3)
+                      val chunk = ShortArray(16000 * 5)
                       while (running) {
                           var n = 0
                           while (n < chunk.size && running) {
@@ -915,7 +915,7 @@ jobs:
                           }
                       }
                   } catch (e: Exception) {
-                      show("⚠ " + (e.message ?: "Internet সমস্যা"))
+                      if ((e.message ?: "").contains("429")) { show("⏳ একটু অপেক্ষা..."); Thread.sleep(6000) } else { show("⚠ " + (e.message ?: "Internet সমস্যা")) }
                   } finally {
                       pending.decrementAndGet()
                   }
