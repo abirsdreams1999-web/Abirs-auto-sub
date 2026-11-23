@@ -1,0 +1,493 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Generate project files
+        run: |
+          mkdir -p app/src/main/java/com/example/livesub
+
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "LiveSubtitle"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx3g
+          EOF
+
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.example.livesub"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.example.livesub"
+                  minSdk = 29
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          dependencies {
+              implementation("com.squareup.okhttp3:okhttp:4.12.0")
+              implementation("com.google.mlkit:translate:17.0.3")
+              implementation("com.google.mlkit:language-id:17.0.6")
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <application
+                  android:label="Live Subtitle"
+                  android:theme="@android:style/Theme.DeviceDefault.Light">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".CaptureService"
+                      android:exported="false"
+                      android:foregroundServiceType="mediaProjection" />
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/example/livesub/MainActivity.kt <<'EOF'
+          package com.example.livesub
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.media.projection.MediaProjectionManager
+          import android.net.Uri
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.widget.Button
+          import android.widget.EditText
+          import android.widget.LinearLayout
+          import android.widget.RadioButton
+          import android.widget.RadioGroup
+          import android.widget.TextView
+          import android.widget.Toast
+
+          class MainActivity : Activity() {
+              private lateinit var keyInput: EditText
+              private lateinit var rbBn: RadioButton
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val prefs = getSharedPreferences("p", MODE_PRIVATE)
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.setPadding(48, 120, 48, 48)
+
+                  val info = TextView(this)
+                  info.text = "Groq API Key দাও (console.groq.com থেকে ফ্রি):"
+                  keyInput = EditText(this)
+                  keyInput.setSingleLine()
+                  keyInput.hint = "gsk_..."
+                  keyInput.setText(prefs.getString("key", ""))
+
+                  val group = RadioGroup(this)
+                  rbBn = RadioButton(this)
+                  rbBn.text = "বাংলায় সাবটাইটেল"
+                  rbBn.id = 1001
+                  val rbEn = RadioButton(this)
+                  rbEn.text = "English subtitle"
+                  rbEn.id = 1002
+                  group.addView(rbBn)
+                  group.addView(rbEn)
+                  val isBn = prefs.getString("target", "bn") == "bn"
+                  rbBn.isChecked = isBn
+                  rbEn.isChecked = !isBn
+
+                  val start = Button(this)
+                  start.text = "চালু করো"
+                  val stop = Button(this)
+                  stop.text = "বন্ধ করো"
+
+                  root.addView(info)
+                  root.addView(keyInput)
+                  root.addView(group)
+                  root.addView(start)
+                  root.addView(stop)
+                  setContentView(root)
+
+                  start.setOnClickListener {
+                      prefs.edit()
+                          .putString("key", keyInput.text.toString().trim())
+                          .putString("target", if (rbBn.isChecked) "bn" else "en")
+                          .apply()
+                      if (!Settings.canDrawOverlays(this)) {
+                          startActivity(
+                              Intent(
+                                  Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                  Uri.parse("package:$packageName")
+                              )
+                          )
+                          Toast.makeText(this, "Overlay permission দিয়ে ফিরে এসে আবার চাপো", Toast.LENGTH_LONG).show()
+                      } else {
+                          requestPermissions(
+                              arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS),
+                              1
+                          )
+                      }
+                  }
+
+                  stop.setOnClickListener {
+                      stopService(Intent(this, CaptureService::class.java))
+                  }
+              }
+
+              override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+                  super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+                  if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                      val mpm = getSystemService(MediaProjectionManager::class.java)
+                      startActivityForResult(mpm.createScreenCaptureIntent(), 2)
+                  } else {
+                      Toast.makeText(this, "Microphone/Audio permission দরকার", Toast.LENGTH_LONG).show()
+                  }
+              }
+
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if (requestCode == 2 && resultCode == RESULT_OK && data != null) {
+                      val prefs = getSharedPreferences("p", MODE_PRIVATE)
+                      val i = Intent(this, CaptureService::class.java)
+                      i.putExtra("code", resultCode)
+                      i.putExtra("data", data)
+                      i.putExtra("key", prefs.getString("key", ""))
+                      i.putExtra("target", prefs.getString("target", "bn"))
+                      startForegroundService(i)
+                      Toast.makeText(this, "চালু হয়েছে। এবার যেকোনো ভিডিও চালাও", Toast.LENGTH_LONG).show()
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/example/livesub/CaptureService.kt <<'EOF'
+          package com.example.livesub
+
+          import android.annotation.SuppressLint
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.Service
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.graphics.Color
+          import android.graphics.PixelFormat
+          import android.media.AudioAttributes
+          import android.media.AudioFormat
+          import android.media.AudioPlaybackCaptureConfiguration
+          import android.media.AudioRecord
+          import android.media.projection.MediaProjection
+          import android.media.projection.MediaProjectionManager
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.view.Gravity
+          import android.view.View
+          import android.view.WindowManager
+          import android.widget.TextView
+          import com.google.mlkit.nl.languageid.LanguageIdentification
+          import com.google.mlkit.nl.translate.TranslateLanguage
+          import com.google.mlkit.nl.translate.Translation
+          import com.google.mlkit.nl.translate.Translator
+          import com.google.mlkit.nl.translate.TranslatorOptions
+          import okhttp3.MediaType.Companion.toMediaType
+          import okhttp3.MultipartBody
+          import okhttp3.OkHttpClient
+          import okhttp3.Request
+          import okhttp3.RequestBody.Companion.toRequestBody
+          import org.json.JSONObject
+          import java.nio.ByteBuffer
+          import java.nio.ByteOrder
+          import java.util.concurrent.Executors
+          import kotlin.math.sqrt
+
+          class CaptureService : Service() {
+              private var projection: MediaProjection? = null
+              private var record: AudioRecord? = null
+              @Volatile private var running = false
+              private var wm: WindowManager? = null
+              private var tv: TextView? = null
+              private val main = Handler(Looper.getMainLooper())
+              private val http = OkHttpClient()
+              private val translators = HashMap<String, Translator>()
+              private val net = Executors.newSingleThreadExecutor()
+              private var target = "bn"
+              private var apiKey = ""
+              private val clearTask = Runnable { tv?.visibility = View.GONE }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+
+              @SuppressLint("MissingPermission")
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (intent == null) {
+                      stopSelf()
+                      return START_NOT_STICKY
+                  }
+                  target = intent.getStringExtra("target") ?: "bn"
+                  apiKey = intent.getStringExtra("key") ?: ""
+
+                  val nm = getSystemService(NotificationManager::class.java)
+                  nm.createNotificationChannel(
+                      NotificationChannel("sub", "Subtitle", NotificationManager.IMPORTANCE_LOW)
+                  )
+                  val n = Notification.Builder(this, "sub")
+                      .setContentTitle("Live Subtitle চলছে")
+                      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                      .build()
+                  startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+
+                  val code = intent.getIntExtra("code", 0)
+                  @Suppress("DEPRECATION")
+                  val data = intent.getParcelableExtra<Intent>("data")
+                  if (data == null) {
+                      stopSelf()
+                      return START_NOT_STICKY
+                  }
+                  val mpm = getSystemService(MediaProjectionManager::class.java)
+                  val p = mpm.getMediaProjection(code, data)
+                  projection = p
+                  p.registerCallback(object : MediaProjection.Callback() {
+                      override fun onStop() {
+                          stopSelf()
+                      }
+                  }, main)
+
+                  showOverlay()
+                  startCapture(p)
+                  return START_NOT_STICKY
+              }
+
+              private fun showOverlay() {
+                  wm = getSystemService(WindowManager::class.java)
+                  val t = TextView(this)
+                  t.setTextColor(Color.WHITE)
+                  t.textSize = 18f
+                  t.setBackgroundColor(0xAA000000.toInt())
+                  t.setPadding(24, 16, 24, 16)
+                  t.gravity = Gravity.CENTER
+                  t.visibility = View.GONE
+                  val lp = WindowManager.LayoutParams(
+                      WindowManager.LayoutParams.MATCH_PARENT,
+                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                      PixelFormat.TRANSLUCENT
+                  )
+                  lp.gravity = Gravity.BOTTOM
+                  lp.y = 200
+                  wm?.addView(t, lp)
+                  tv = t
+              }
+
+              private fun show(s: String) {
+                  main.post {
+                      tv?.text = s
+                      tv?.visibility = View.VISIBLE
+                      main.removeCallbacks(clearTask)
+                      main.postDelayed(clearTask, 8000)
+                  }
+              }
+
+              @SuppressLint("MissingPermission")
+              private fun startCapture(p: MediaProjection) {
+                  val cfg = AudioPlaybackCaptureConfiguration.Builder(p)
+                      .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                      .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                      .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+                      .build()
+                  val fmt = AudioFormat.Builder()
+                      .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                      .setSampleRate(16000)
+                      .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                      .build()
+                  val rec = AudioRecord.Builder()
+                      .setAudioFormat(fmt)
+                      .setAudioPlaybackCaptureConfig(cfg)
+                      .setBufferSizeInBytes(16000 * 2 * 2)
+                      .build()
+                  record = rec
+                  running = true
+                  rec.startRecording()
+
+                  Thread {
+                      val chunk = ShortArray(16000 * 5)
+                      while (running) {
+                          var n = 0
+                          while (n < chunk.size && running) {
+                              val r = rec.read(chunk, n, chunk.size - n)
+                              if (r <= 0) {
+                                  Thread.sleep(50)
+                              } else {
+                                  n += r
+                              }
+                          }
+                          if (n == chunk.size && isLoud(chunk)) {
+                              val wav = toWav(chunk)
+                              net.execute { transcribe(wav) }
+                          }
+                      }
+                  }.start()
+              }
+
+              private fun isLoud(a: ShortArray): Boolean {
+                  var sum = 0.0
+                  for (v in a) sum += v.toDouble() * v.toDouble()
+                  return sqrt(sum / a.size) > 300
+              }
+
+              private fun toWav(pcm: ShortArray): ByteArray {
+                  val dataLen = pcm.size * 2
+                  val b = ByteBuffer.allocate(44 + dataLen).order(ByteOrder.LITTLE_ENDIAN)
+                  b.put("RIFF".toByteArray())
+                  b.putInt(36 + dataLen)
+                  b.put("WAVE".toByteArray())
+                  b.put("fmt ".toByteArray())
+                  b.putInt(16)
+                  b.putShort(1)
+                  b.putShort(1)
+                  b.putInt(16000)
+                  b.putInt(16000 * 2)
+                  b.putShort(2)
+                  b.putShort(16)
+                  b.put("data".toByteArray())
+                  b.putInt(dataLen)
+                  for (v in pcm) b.putShort(v)
+                  return b.array()
+              }
+
+              private fun transcribe(wav: ByteArray) {
+                  val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+                      .addFormDataPart("model", "whisper-large-v3-turbo")
+                      .addFormDataPart("response_format", "json")
+                      .addFormDataPart("file", "a.wav", wav.toRequestBody("audio/wav".toMediaType()))
+                      .build()
+                  val req = Request.Builder()
+                      .url("https://api.groq.com/openai/v1/audio/transcriptions")
+                      .header("Authorization", "Bearer $apiKey")
+                      .post(body)
+                      .build()
+                  try {
+                      http.newCall(req).execute().use { r ->
+                          val s = r.body?.string() ?: ""
+                          if (r.isSuccessful) {
+                              val t = JSONObject(s).optString("text").trim()
+                              if (t.isNotEmpty()) main.post { handleText(t) }
+                          } else {
+                              show("Error " + r.code + " (API key ঠিক আছে?)")
+                          }
+                      }
+                  } catch (e: Exception) {
+                      show("Internet সমস্যা")
+                  }
+              }
+
+              private fun handleText(text: String) {
+                  LanguageIdentification.getClient().identifyLanguage(text)
+                      .addOnSuccessListener { code ->
+                          val src = TranslateLanguage.fromLanguageTag(code)
+                          if (code == "und" || code == target || src == null) {
+                              show(text)
+                          } else {
+                              val key = src + ">" + target
+                              val tr = translators.getOrPut(key) {
+                                  Translation.getClient(
+                                      TranslatorOptions.Builder()
+                                          .setSourceLanguage(src)
+                                          .setTargetLanguage(target)
+                                          .build()
+                                  )
+                              }
+                              tr.downloadModelIfNeeded()
+                                  .addOnSuccessListener {
+                                      tr.translate(text)
+                                          .addOnSuccessListener { out -> show(out) }
+                                          .addOnFailureListener { show(text) }
+                                  }
+                                  .addOnFailureListener { show(text) }
+                          }
+                      }
+                      .addOnFailureListener { show(text) }
+              }
+
+              override fun onDestroy() {
+                  running = false
+                  try { record?.stop() } catch (e: Exception) {}
+                  record?.release()
+                  try { projection?.stop() } catch (e: Exception) {}
+                  try { tv?.let { wm?.removeView(it) } } catch (e: Exception) {}
+                  translators.values.forEach { it.close() }
+                  super.onDestroy()
+              }
+          }
+          EOF
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiveSubtitle-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
