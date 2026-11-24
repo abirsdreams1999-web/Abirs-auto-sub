@@ -75,8 +75,8 @@ jobs:
                   applicationId = "com.example.livesub"
                   minSdk = 29
                   targetSdk = 34
-                  versionCode = 3
-                  versionName = "3.0"
+                  versionCode = 4
+                  versionName = "4.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -208,21 +208,31 @@ jobs:
                   .writeTimeout(300, TimeUnit.SECONDS)
                   .build()
 
-              private const val SYS1 = "You are a professional subtitle translator. Translate the user's text into natural, fluent, spoken Bangla (বাংলা). Keep names and meaning accurate. Output ONLY the translation, nothing else."
-              private const val SYS2 = "You are a professional subtitle translator. Translate every item of the given JSON array into natural, fluent, spoken Bangla (বাংলা). Reply ONLY with a JSON object like {\"t\":[...]} having exactly the same number of items in the same order."
+              fun tname(code: String): String {
+                  return if (code == "bn") "Bangla (বাংলা)" else "English"
+              }
 
-              fun call(key: String, data: ByteArray, name: String, mime: String, toEnglish: Boolean, verbose: Boolean): String {
+              private fun sys1(tn: String): String {
+                  return "You are a professional subtitle translator. Translate the user's text into natural, fluent, spoken " + tn + ". Keep names and meaning accurate. If it is already in that language, return it unchanged. Output ONLY the translation, nothing else."
+              }
+
+              private fun sys2(tn: String): String {
+                  return "You are a professional subtitle translator. Translate every item of the given JSON array into natural, fluent, spoken " + tn + ". If an item is already in that language keep it. Reply ONLY with a JSON object like {\"t\":[...]} having exactly the same number of items in the same order."
+              }
+
+              fun call(key: String, data: ByteArray, name: String, mime: String, toEnglish: Boolean, verbose: Boolean, lang: String): String {
                   val model = if (toEnglish) "whisper-large-v3" else "whisper-large-v3-turbo"
                   val ep = if (toEnglish) "translations" else "transcriptions"
-                  val body = MultipartBody.Builder().setType(MultipartBody.FORM)
-                      .addFormDataPart("model", model)
-                      .addFormDataPart("response_format", if (verbose) "verbose_json" else "json")
-                      .addFormDataPart("file", name, data.toRequestBody(mime.toMediaType()))
-                      .build()
+                  val b = MultipartBody.Builder().setType(MultipartBody.FORM)
+                  b.addFormDataPart("model", model)
+                  b.addFormDataPart("response_format", if (verbose) "verbose_json" else "json")
+                  b.addFormDataPart("temperature", "0")
+                  if (!toEnglish && lang.isNotEmpty()) b.addFormDataPart("language", lang)
+                  b.addFormDataPart("file", name, data.toRequestBody(mime.toMediaType()))
                   val req = Request.Builder()
                       .url("https://api.groq.com/openai/v1/audio/" + ep)
                       .header("Authorization", "Bearer " + key)
-                      .post(body)
+                      .post(b.build())
                       .build()
                   http.newCall(req).execute().use { r ->
                       val s = r.body?.string() ?: ""
@@ -252,20 +262,20 @@ jobs:
                   return m
               }
 
-              fun translate(key: String, text: String, model: String): String {
+              fun translate(key: String, text: String, model: String, tn: String): String {
                   val j = JSONObject()
                       .put("model", model)
-                      .put("messages", msgs(SYS1, text))
+                      .put("messages", msgs(sys1(tn), text))
                       .put("temperature", 0.2)
                   return chat(key, j)
               }
 
-              private fun batch(key: String, part: List<String>, model: String): List<String> {
+              private fun batch(key: String, part: List<String>, model: String, tn: String): List<String> {
                   val arr = JSONArray()
                   for (t in part) arr.put(t)
                   val j = JSONObject()
                       .put("model", model)
-                      .put("messages", msgs(SYS2, arr.toString()))
+                      .put("messages", msgs(sys2(tn), arr.toString()))
                       .put("temperature", 0.2)
                       .put("response_format", JSONObject().put("type", "json_object"))
                   val a = JSONObject(chat(key, j)).getJSONArray("t")
@@ -275,17 +285,17 @@ jobs:
                   return out
               }
 
-              fun translateMany(key: String, texts: List<String>, model: String): List<String> {
+              fun translateMany(key: String, texts: List<String>, model: String, tn: String): List<String> {
                   val out = ArrayList<String>()
                   var i = 0
                   while (i < texts.size) {
                       val part = texts.subList(i, minOf(i + 25, texts.size))
                       var res: List<String> = part
                       try {
-                          res = batch(key, part, model)
+                          res = batch(key, part, model, tn)
                       } catch (e: Exception) {
                           try {
-                              res = batch(key, part, "llama-3.1-8b-instant")
+                              res = batch(key, part, "llama-3.1-8b-instant", tn)
                           } catch (e2: Exception) {
                           }
                       }
@@ -428,6 +438,7 @@ jobs:
 
           import android.Manifest
           import android.app.Activity
+          import android.app.AlertDialog
           import android.content.ContentValues
           import android.content.Intent
           import android.content.pm.PackageManager
@@ -459,11 +470,22 @@ jobs:
               private lateinit var statusTv: TextView
               private lateinit var outTv: TextView
               private lateinit var saveBtn: Button
+              private lateinit var srcBtn: Button
               private lateinit var chipBn: TextView
               private lateinit var chipEn: TextView
               private lateinit var autoSw: Switch
+              private lateinit var fastSw: Switch
               private var tgt = "bn"
               private var srt = ""
+
+              private val langNames = arrayOf(
+                  "অটো (নিজে চিনবে)", "English", "हिन्दी Hindi", "বাংলা", "中文 Chinese",
+                  "日本語 Japanese", "한국어 Korean", "اردو Urdu", "العربية Arabic", "Türkçe Turkish",
+                  "Русский Russian", "Español Spanish", "Français French", "Indonesia", "ไทย Thai"
+              )
+              private val langCodes = arrayOf(
+                  "", "en", "hi", "bn", "zh", "ja", "ko", "ur", "ar", "tr", "ru", "es", "fr", "id", "th"
+              )
 
               private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -533,6 +555,12 @@ jobs:
                   chipEn.background = if (l == "en") grad(14) else shape(0xFF2A2F55.toInt(), 14)
               }
 
+              private fun setSrc(code: String) {
+                  val i = maxOf(0, langCodes.indexOf(code))
+                  prefs.edit().putString("src", langCodes[i]).apply()
+                  srcBtn.text = "ভিডিওর ভাষা: " + langNames[i] + "  ▾"
+              }
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   window.statusBarColor = 0xFF0B0E22.toInt()
@@ -595,11 +623,28 @@ jobs:
                   c1.add(row, 8)
                   setLang(tgt)
 
+                  c1.add(label("ভিডিওর ভাষা জানা থাকলে বেছে দাও, ভুল কমবে", 14f, 0xFF9AA0D0.toInt()), 16)
+                  srcBtn = btn("", false)
+                  srcBtn.setOnClickListener {
+                      AlertDialog.Builder(this)
+                          .setTitle("ভিডিওর ভাষা কোনটা?")
+                          .setItems(langNames) { _, w -> setSrc(langCodes[w]) }
+                          .show()
+                  }
+                  c1.add(srcBtn, 8)
+                  setSrc(prefs.getString("src", "") ?: "")
+
+                  fastSw = Switch(this)
+                  fastSw.text = "⚡ দ্রুত মোড (গতি বেশি, নির্ভুলতা সামান্য কম)"
+                  fastSw.setTextColor(Color.WHITE)
+                  fastSw.isChecked = prefs.getBoolean("fast", true)
+                  c1.add(fastSw, 16)
+
                   autoSw = Switch(this)
                   autoSw.text = "অ্যাপ খুললেই নিজে চালু হবে"
                   autoSw.setTextColor(Color.WHITE)
                   autoSw.isChecked = prefs.getBoolean("auto", true)
-                  c1.add(autoSw, 16)
+                  c1.add(autoSw, 12)
 
                   val start = btn("▶  লাইভ সাবটাইটেল চালু করো", true)
                   val stop = btn("■  বন্ধ করো", false)
@@ -659,6 +704,7 @@ jobs:
                       .putString("key", keyInput.text.toString().trim())
                       .putString("target", tgt)
                       .putBoolean("auto", autoSw.isChecked)
+                      .putBoolean("fast", fastSw.isChecked)
                       .apply()
               }
 
@@ -708,6 +754,8 @@ jobs:
                       i.putExtra("data", data)
                       i.putExtra("key", prefs.getString("key", ""))
                       i.putExtra("target", tgt)
+                      i.putExtra("src", prefs.getString("src", ""))
+                      i.putExtra("fast", prefs.getBoolean("fast", true))
                       startForegroundService(i)
                       Toast.makeText(this, "চালু হয়েছে। এবার যেকোনো ভিডিও চালাও", Toast.LENGTH_LONG).show()
                       statusTv.postDelayed({ refreshStatus() }, 800)
@@ -745,7 +793,8 @@ jobs:
                       Toast.makeText(this, "আগে Groq API Key দাও", Toast.LENGTH_LONG).show()
                       return
                   }
-                  val toEn = tgt == "en"
+                  val src = prefs.getString("src", "") ?: ""
+                  val viaTr = tgt == "en" && src.isEmpty()
                   saveBtn.visibility = View.GONE
                   outTv.text = "প্রসেস শুরু হচ্ছে..."
                   Thread {
@@ -756,7 +805,7 @@ jobs:
                           Dec.run(this, uri) { pcm, off, idx ->
                               ui("প্রসেস হচ্ছে... অংশ " + (idx + 1))
                               val wav = Wav.make(pcm)
-                              val json = JSONObject(retry { Groq.call(key, wav, "a.wav", "audio/wav", toEn, true) })
+                              val json = JSONObject(retry { Groq.call(key, wav, "a.wav", "audio/wav", viaTr, true, src) })
                               val segs = json.optJSONArray("segments")
                               if (segs != null) {
                                   for (i in 0 until segs.length()) {
@@ -775,9 +824,9 @@ jobs:
                               return@Thread
                           }
                           var fin: List<String> = tx
-                          if (!toEn) {
-                              ui("বাংলা অনুবাদ হচ্ছে...")
-                              fin = Groq.translateMany(key, tx, "llama-3.3-70b-versatile")
+                          if (!viaTr && src != tgt) {
+                              ui("অনুবাদ হচ্ছে...")
+                              fin = Groq.translateMany(key, tx, "llama-3.3-70b-versatile", Groq.tname(tgt))
                           }
                           runOnUiThread { finishSrt(st, en, fin) }
                       } catch (e: Exception) {
@@ -827,10 +876,13 @@ jobs:
           import android.app.NotificationChannel
           import android.app.NotificationManager
           import android.app.Service
+          import android.content.Context
           import android.content.Intent
           import android.content.pm.ServiceInfo
+          import android.graphics.Canvas
           import android.graphics.Color
           import android.graphics.PixelFormat
+          import android.graphics.Typeface
           import android.graphics.drawable.GradientDrawable
           import android.media.AudioAttributes
           import android.media.AudioFormat
@@ -850,7 +902,16 @@ jobs:
           import org.json.JSONObject
           import java.util.concurrent.Executors
           import java.util.concurrent.atomic.AtomicInteger
+          import kotlin.math.abs
           import kotlin.math.sqrt
+
+          class OTv(ctx: Context) : TextView(ctx) {
+              override fun onDraw(canvas: Canvas) {
+                  super.onDraw(canvas)
+                  super.onDraw(canvas)
+                  super.onDraw(canvas)
+              }
+          }
 
           class CaptureService : Service() {
               companion object {
@@ -862,10 +923,13 @@ jobs:
               @Volatile private var running = false
               private var wm: WindowManager? = null
               private var box: View? = null
+              private var bar: View? = null
+              private var grip: View? = null
               private var tv: TextView? = null
               private var orig: TextView? = null
-              private var size = 18f
+              private var size = 20f
               private var dual = false
+              private var darkBg = false
               private var ci = 0
               private val colors = intArrayOf(Color.WHITE, 0xFFFFE066.toInt(), 0xFF7CF5FF.toInt(), 0xFF8CFF9E.toInt())
               private val main = Handler(Looper.getMainLooper())
@@ -873,6 +937,12 @@ jobs:
               private val pending = AtomicInteger(0)
               private var target = "bn"
               private var apiKey = ""
+              private var src = ""
+              private var fast = true
+              private val hideTask = Runnable {
+                  bar?.visibility = View.GONE
+                  grip?.visibility = View.GONE
+              }
 
               override fun onBind(intent: Intent?): IBinder? = null
 
@@ -884,6 +954,8 @@ jobs:
                   }
                   target = intent.getStringExtra("target") ?: "bn"
                   apiKey = intent.getStringExtra("key") ?: ""
+                  src = intent.getStringExtra("src") ?: ""
+                  fast = intent.getBooleanExtra("fast", true)
 
                   val nm = getSystemService(NotificationManager::class.java)
                   nm.createNotificationChannel(
@@ -917,13 +989,23 @@ jobs:
                   return START_NOT_STICKY
               }
 
+              private fun poke() {
+                  bar?.visibility = View.VISIBLE
+                  grip?.visibility = View.VISIBLE
+                  main.removeCallbacks(hideTask)
+                  main.postDelayed(hideTask, 6000)
+              }
+
               private fun chip(label: String, f: () -> Unit): TextView {
                   val b = TextView(this)
                   b.text = label
                   b.setTextColor(Color.WHITE)
                   b.textSize = 16f
                   b.setPadding(22, 10, 22, 10)
-                  b.setOnClickListener { f() }
+                  b.setOnClickListener {
+                      f()
+                      poke()
+                  }
                   return b
               }
 
@@ -935,60 +1017,67 @@ jobs:
                   val bx = LinearLayout(this)
                   bx.orientation = LinearLayout.VERTICAL
                   val bg = GradientDrawable()
-                  bg.setColor(0xE60F1230.toInt())
+                  bg.setColor(0xCC0F1230.toInt())
                   bg.cornerRadius = 40f
-                  bg.setStroke(3, 0xFF6C4DFF.toInt())
-                  bx.background = bg
+                  bx.background = null
                   bx.setPadding(28, 8, 28, 8)
 
-                  val t = TextView(this)
-                  t.text = "সাবটাইটেল এখানে আসবে..."
+                  val t = OTv(this)
+                  t.text = "সাবটাইটেল এখানে আসবে... (ট্যাপ করলে বাটন আসবে)"
                   t.setTextColor(colors[0])
                   t.textSize = size
+                  t.setTypeface(t.typeface, Typeface.BOLD)
+                  t.setShadowLayer(12f, 0f, 0f, Color.BLACK)
                   t.gravity = Gravity.CENTER
                   t.setPadding(8, 8, 8, 16)
 
-                  val o = TextView(this)
-                  o.setTextColor(0xFF9AA0D0.toInt())
+                  val o = OTv(this)
+                  o.setTextColor(0xFFC8CCF0.toInt())
                   o.textSize = size * 0.7f
+                  o.setShadowLayer(10f, 0f, 0f, Color.BLACK)
                   o.gravity = Gravity.CENTER
                   o.setPadding(8, 8, 8, 0)
                   o.visibility = View.GONE
 
-                  val bar = LinearLayout(this)
-                  bar.orientation = LinearLayout.HORIZONTAL
-                  bar.gravity = Gravity.END
-                  bar.addView(chip("A−") {
+                  val br = LinearLayout(this)
+                  br.orientation = LinearLayout.HORIZONTAL
+                  br.gravity = Gravity.END
+                  br.addView(chip("A−") {
                       size = maxOf(10f, size - 2f)
                       t.textSize = size
                       o.textSize = size * 0.7f
                   })
-                  bar.addView(chip("A+") {
+                  br.addView(chip("A+") {
                       size = minOf(48f, size + 2f)
                       t.textSize = size
                       o.textSize = size * 0.7f
                   })
-                  bar.addView(chip("🎨") {
+                  br.addView(chip("🎨") {
                       ci = (ci + 1) % colors.size
                       t.setTextColor(colors[ci])
                   })
-                  bar.addView(chip("২ভা") {
+                  br.addView(chip("▣") {
+                      darkBg = !darkBg
+                      bx.background = if (darkBg) bg else null
+                  })
+                  br.addView(chip("২ভা") {
                       dual = !dual
                       o.visibility = if (dual) View.VISIBLE else View.GONE
                   })
-                  bar.addView(chip("✕") { stopSelf() })
+                  br.addView(chip("✕") { stopSelf() })
 
-                  val grip = TextView(this)
-                  grip.text = "◢"
-                  grip.setTextColor(0xFF9AA0D0.toInt())
-                  grip.textSize = 20f
-                  grip.gravity = Gravity.END
-                  grip.setPadding(20, 0, 8, 8)
+                  val gp = TextView(this)
+                  gp.text = "◢"
+                  gp.setTextColor(0xFFC8CCF0.toInt())
+                  gp.textSize = 22f
+                  gp.setShadowLayer(8f, 0f, 0f, Color.BLACK)
+                  gp.gravity = Gravity.END
+                  gp.setPadding(20, 0, 8, 8)
 
-                  bx.addView(bar)
+                  bx.addView(br)
                   bx.addView(o)
                   bx.addView(t)
-                  bx.addView(grip)
+                  bx.addView(gp)
 
                   val p = WindowManager.LayoutParams(
                       (dm.widthPixels * 0.92).toInt(),
@@ -1005,6 +1094,7 @@ jobs:
                   var sy = 0
                   var tx = 0f
                   var ty = 0f
+                  var moved = false
                   bx.setOnTouchListener { _, e ->
                       when (e.action) {
                           MotionEvent.ACTION_DOWN -> {
@@ -1012,11 +1102,27 @@ jobs:
                               sy = p.y
                               tx = e.rawX
                               ty = e.rawY
+                              moved = false
                           }
                           MotionEvent.ACTION_MOVE -> {
-                              p.x = sx + (e.rawX - tx).toInt()
-                              p.y = sy + (e.rawY - ty).toInt()
-                              w.updateViewLayout(bx, p)
+                              val dx = e.rawX - tx
+                              val dy = e.rawY - ty
+                              if (abs(dx) > 12 || abs(dy) > 12) moved = true
+                              if (moved) {
+                                  p.x = sx + dx.toInt()
+                                  p.y = sy + dy.toInt()
+                                  w.updateViewLayout(bx, p)
+                              }
+                          }
+                          MotionEvent.ACTION_UP -> {
+                              if (!moved) {
+                                  if (bar?.visibility == View.VISIBLE) {
+                                      main.removeCallbacks(hideTask)
+                                      hideTask.run()
+                                  } else {
+                                      poke()
+                                  }
+                              }
                           }
                       }
                       true
@@ -1024,7 +1130,7 @@ jobs:
 
                   var gw = 0
                   var gx = 0f
-                  grip.setOnTouchListener { _, e ->
+                  gp.setOnTouchListener { _, e ->
                       when (e.action) {
                           MotionEvent.ACTION_DOWN -> {
                               gw = p.width
@@ -1040,8 +1146,11 @@ jobs:
 
                   w.addView(bx, p)
                   box = bx
+                  bar = br
+                  grip = gp
                   tv = t
                   orig = o
+                  poke()
               }
 
               private fun show(s: String, original: String) {
@@ -1071,9 +1180,10 @@ jobs:
                   record = rec
                   running = true
                   rec.startRecording()
+                  val secs = if (fast) 3 else 5
 
                   Thread {
-                      val chunk = ShortArray(16000 * 5)
+                      val chunk = ShortArray(16000 * secs)
                       while (running) {
                           var n = 0
                           while (n < chunk.size && running) {
@@ -1101,19 +1211,22 @@ jobs:
 
               private fun transcribe(wav: ByteArray) {
                   try {
-                      val toEn = target == "en"
-                      val s = Groq.call(apiKey, wav, "a.wav", "audio/wav", toEn, false)
+                      val viaTr = target == "en" && src.isEmpty()
+                      val s = Groq.call(apiKey, wav, "a.wav", "audio/wav", viaTr, false, src)
                       val t = JSONObject(s).optString("text").trim()
-                      if (t.isNotEmpty()) {
-                          if (toEn) {
+                      if (t.length >= 2 && !t.contains("Amara.org")) {
+                          if (viaTr || src == target) {
                               show(t, "")
                           } else {
+                              val tn = Groq.tname(target)
+                              val m1 = if (fast) "llama-3.1-8b-instant" else "llama-3.3-70b-versatile"
+                              val m2 = if (fast) "llama-3.3-70b-versatile" else "llama-3.1-8b-instant"
                               var out: String? = null
                               try {
-                                  out = Groq.translate(apiKey, t, "llama-3.3-70b-versatile")
+                                  out = Groq.translate(apiKey, t, m1, tn)
                               } catch (e: Exception) {
                                   try {
-                                      out = Groq.translate(apiKey, t, "llama-3.1-8b-instant")
+                                      out = Groq.translate(apiKey, t, m2, tn)
                                   } catch (e2: Exception) {
                                   }
                               }
@@ -1121,7 +1234,7 @@ jobs:
                               if (res != null) {
                                   show(res, t)
                               } else {
-                                  main.post { Tr.one(t, "bn") { show(it, t) } }
+                                  main.post { Tr.one(t, target) { show(it, t) } }
                               }
                           }
                       }
@@ -1141,6 +1254,7 @@ jobs:
               override fun onDestroy() {
                   active = false
                   running = false
+                  main.removeCallbacks(hideTask)
                   try { record?.stop() } catch (e: Exception) {}
                   record?.release()
                   try { projection?.stop() } catch (e: Exception) {}
@@ -1156,11 +1270,6 @@ jobs:
 
       - name: Build
         run: gradle assembleDebug --no-daemon
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: LiveSubtitle-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk LiveSubtitle-v${{ github.run_number }}.apk
