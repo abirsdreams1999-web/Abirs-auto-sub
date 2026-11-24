@@ -1162,7 +1162,7 @@ jobs:
           name: LiveSubtitle-APK
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - - name: Rename APK
+      - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk LiveSubtitle-v${{ github.run_number }}.apk
 
       - uses: softprops/action-gh-release@v2
